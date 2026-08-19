@@ -1,0 +1,150 @@
+---
+title: "Creating Lung Landscape from Paper"
+author: "Sonali Arora, Laavan Suresh"
+date: "August 19, 2026"
+output:
+  html_document:
+    toc: true
+    theme: united
+---
+
+In this vignette, we read in raw counts for protein coding genes from all datasets, subset to common genes shared across datasets, batch correct and also do dimension reduction using PCA, tSNE, UMAP and PACMAP.
+
+```{r}
+
+library(GenomicRanges)
+library(rtracklayer)
+library(DESeq2)
+library(edgeR)
+library(sva)
+library(umap)
+library(Rtsne)
+
+dataset_dir = "~/HollandLabShared/Ramya/breast_landscapes/Sonali_final_data/raw_counts"
+
+# read the datasets
+tcga_brca = readRDS("unstranded_raw_protein_coding_tcga_brca.rds") 
+
+df1= read.delim("PRJNA251383_exon_raw_reads.txt", row.names = 1)  
+df2 = read.delim("Jamie_FHCC_protein_coding_genes.txt", row.names = 1)    
+df3 = read.delim("Protein_coding_gene_no_qatar_samples_exon_raw_reads.txt", row.names = 1) 
+df4 = read.delim("FHHCC_hg38_raw_protein_coding_genes.txt", row.names = 1)  
+df5 = readRDS("Cornell_combined_hg38_raw_protein_coding_genes.Rds") 
+df6 = read.delim("fuscc_hg38_raw_protein_coding_genes.txt", row.names = 1)   
+df7 = read.delim("GSE240671_122_hg38_raw_protein_coding_genes.txt", row.names = 1)  
+
+aurora = read.delim("GSE209998_AUR_129_raw_counts.txt", row.names = 1) 
+normal_aurora = colnames(aurora)[which(substr(colnames(aurora), 10, 10) == "N")]
+aurora = aurora[,-which(colnames(aurora) %in% normal_aurora)]
+
+df9 = read.delim("raw_counts_star_CMI_MBC_counts.txt", check.names = F) 
+df10 = readRDS("GSE267442_8pairs_china_hg38_raw_protein_coding_genes.txt") 
+df11 = readRDS("GSE309004_hg38_raw_protein_coding_genes.txt")  
+
+gse296861= read.delim("GSE296861_ffpe_hg38_raw_protein_coding_genes.txt", row.names = 1) 
+gse296861_name = read.csv("GSE296861_ffpe_SraRunTable.csv")
+breast_name = gse296861_name$Run[which(gse296861_name$cell_type == "Breast cancer")]
+gse296861 = gse296861[,match(breast_name, colnames(gse296861))]
+
+# find common protein coding genes for each dataset
+gtf = import("gencode.v39.primary_assembly.annotation.gtf")
+common_genes = gtf$gene_name
+df1 = df1[common_genes, ]
+df2 = df2[common_genes, ]
+df3 = df3[common_genes, ]
+df4 = df4[common_genes, ]
+df5 = df5[common_genes, ]
+df6 = df6[common_genes, ]
+df7 = df7[common_genes, ]
+aurora = aurora[common_genes, ]
+df9 = df9[common_genes, ]
+df10 = df10[common_genes, ]
+df11= df11[common_genes, ]
+gse296861 = df13[common_genes, ]
+tcga_brca = tcga_brca[common_genes, ]
+
+# combine all the data
+count_matrix = cbind(df1, df2, df3, df4, df5, df6, df7, 
+        aurora, df9, df10, df11,  gse296861, tcga_brca)
+
+# define batches for batch correction
+batch = c(rep("batch1", ncol(df1)), rep("batch2", ncol(df2)),  
+          rep("batch3", ncol(df3)), rep("batch4", ncol(df4)), 
+          rep("batch5", ncol(df5)), rep("batch6", ncol(df6)),
+          rep("batch7", ncol(df7)), rep("aurora", ncol(df8)),
+          rep("batch7", ncol(df7)), rep("aurora", ncol(df8)),
+          rep("batch9", ncol(df9)), rep("batch10", ncol(df10)), 
+          rep("batch11", ncol(df11)), rep("gse296861", ncol(df12)),
+          rep("tcga", ncol(tcga_brca)) )
+          
+## batch correction 
+adjusted <- ComBat_seq(count_matrix, batch=batch, group=NULL)
+
+## normalization  ( VST)
+dataMtrx = DESeq2::vst(adjusted)
+
+# TPM normalization 
+getTPM = function(exon_mat, gtf){    
+    gw = width(gtf)
+    y <- DGEList(exon_mat)
+    y$genes <- data.frame(Length=gw)
+    rpkm_vals = rpkm(y )
+    log2_rpkm_vals = log2(rpkm_vals +1)
+    tpm_vals = apply(rpkm_vals, 2, function(x){
+        (x/sum(x))*10^6
+    })
+    log2_tpm_vals = log2(tpm_vals +1)
+    log2_tpm_vals
+}
+log2_tpm_counts = getTPM(adjusted, gtf)
+
+# Perform dimensionality Reduction
+
+## 1. umap 
+umap_out <- umap(t(dataMtrx), random_state = 123, min_dist = 0.5) # Run UMAP
+umap_2d = umap_out$layout
+colnames(umap_2d) = c("UMAP1_2d", "UMAP2_2d")
+
+## 2. pacmap
+library(reticulate)
+reticulate::conda_install(
+  envname = "pacmap_new",
+  packages = "pacmap",
+  pip = TRUE
+)
+use_condaenv("pacmap_new", required = TRUE)
+pacmap <- reticulate::import("pacmap")
+pacmap_embedding <- pacmap$PaCMAP(
+  n_components = 2L,
+  n_neighbors = 10L,
+  MN_ratio = 0.1,
+  FP_ratio = 6
+)
+
+embedding <- pacmap_embedding$fit_transform(t(vst))
+colnames(embedding) = c("PaCMAP1", "PaCMAP2")
+
+# 3.tSNE
+set.seed(42)
+tsne_out2 <- Rtsne(t(dataMtrx),pca=FALSE,perplexity=30,theta=0.0,check_duplicates = FALSE)
+tsne_data2 = tsne_out2$Y
+colnames(tsne_data2) = c("tSNE_1", "tSNE_2")
+
+## 4. pca plot 
+pc= prcomp(t(dataMtrx))
+pc_data1 = data.frame(PC1=pc$x[,1], PC2=pc$x[,2] )
+percentVar <- (pc$sdev^2 / sum( pc$sdev^2 ) )*100
+percentVar= round(percentVar[1:2], 2)
+
+# save the files 
+ans_df =data.frame(umap_2d, embedding, tsne_data2, 
+  pc_data1, sampleName = colnames(dataMtrx))
+write.table(ans_df, "final_metadata_5_21_2026.txt", 
+  sep ="\t", quote=F, row.names=F, col.names=T)
+
+saveRDS(log2_tpm_counts, "log2_tpm_counts.rds")
+saveRDS(dataMtrx, "vst_counts.rds")
+saveRDS(count_matrix , "raw_matrix_not_batch_corrected.rds")
+saveRDS(adjusted , "raw_matrix_batch_corrected.rds")
+saveRDS(batch, "batch_by_dataset.rds")
+```
