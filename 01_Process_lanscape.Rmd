@@ -1,6 +1,6 @@
 ---
-title: "Creating Lung Landscape from Paper"
-author: "Sonali Arora, Laavan Suresh"
+title: "Creating Breast Landscape from Paper"
+author: "Sonali Arora, Ramya Suresh"
 date: "August 19, 2026"
 output:
   html_document:
