@@ -1,0 +1,157 @@
+---
+title: "Make gene expression plots"
+author: "Sonali Arora"
+date: "August 19, 2026"
+output:
+  html_document:
+    toc: true
+    theme: united
+---
+In this vignette, we make all the gene expression plots shown in the various main and supplemental figures of the paper. 
+
+```{r}
+rm(list=ls())
+library(dplyr)
+library(ggplot2)
+library(RColorBrewer)
+library(ggpubr)
+
+s1 = 2# size for points in PCA plot
+legend_pt_size =4
+plot_title_size = 25
+axis_text_size = 25
+axis_title_size=25
+legend_text_size=25
+plot_text = 10
+spacing=1
+chosen_margin = c(0.5,0.5,0.5,0.5)# margins:top,right,bottom,left
+theme_clean <- theme_bw() +
+    theme(
+        plot.title = element_text(hjust=0, vjust=0, 
+                                  lineheight=.8, face="bold", size=plot_title_size ),
+        plot.margin=unit(chosen_margin,"cm"), 
+        legend.text=element_text(size=legend_text_size),
+        legend.key.height = unit(spacing, "cm"),
+        #legend.position = "inside", legend.position.inside = c(0.8, 0.2) ,
+        legend.title=element_blank() , 
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(), 
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank())
+
+
+myPalette <- colorRampPalette(rev(brewer.pal(11, "RdYlBu"))) # for gene expression
+my_gene_fun = function(goi){
+    goi = intersect(goi, rownames(gene_exp_file))    
+    l1 = lapply(goi, function(my_goi){
+        message(my_goi)
+        mat= umap_data2
+        mat$gene_exp = unlist(gene_exp_file[ match(my_goi, rownames(gene_exp_file)), ])              
+        mat = mat[ order(mat$gene_exp, decreasing=FALSE), ]
+        ylim = max(mat$gene_exp)
+        ylow = min(mat$gene_exp )
+        sc <- scale_colour_gradientn(colours = myPalette(ylim), limits=c(ylow, ylim))        
+        fig1 =  ggplot(mat, aes(PaCMAP1, PaCMAP2, color=gene_exp )) +
+            geom_point(size=2) + ggtitle(paste0( my_goi)) + 
+            sc + theme_clean +  
+            theme(legend.position = "inside", legend.position.inside = c(0.85, 0.3) )        
+        fig1
+    })
+}
+
+qual_col_pals = brewer.pal.info[brewer.pal.info$category == 'qual',]
+col_vector = unlist(mapply(brewer.pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
+
+setwd("~/HollandLabShared/Ramya/breast_landscape/Sonali_final_data/Objects")
+resdir = "~/HollandLabShared/Ramya/Sonali_final_data/breast_landscape/breast_Figures"
+umap_data2 = read.delim("final_metadata_5_21_2026.txt", header=T, stringsAsFactors=F)
+gene_exp_file = readRDS("log2tpm_new_GSEs.rds")
+
+identical( colnames(gene_exp_file) , umap_data2$sampleName)
+
+## Fig 2: validation figure
+markers = c(
+    "KRT5",  "FOXC1", "SOX10", # basal / triple neg
+    "STARD3", "GRB7", "PGAP3" ,# her2 
+    "GATA3", "SPDEF", "FOXA1" ,# LUMINAL A
+    "MKI67", "CCNB1", "AURKA" , 
+    "ERBB2",  "ESR1", "PGR")
+
+a1 = my_gene_fun(markers)
+pdf(file.path( "../breast_Figures/Multiplot_suppFig2_Validation_gene_markers_8_5_2026.pdf"), height = 20, width = 16)
+ggarrange( plotlist =  a1, nrow =4, ncol =3)
+dev.off()
+
+
+## Fig 3 :
+ERIC_KINASES  = c("PDGFD", "RET", "FGFR3", "MET", "KIT", "FGFR2" )
+pdf(file.path( "../breast_Figures/Multiplot_Fig3_Eric_kinases_4_24_2026.pdf"), height = 20, width = 16)
+a1 = my_gene_fun(ERIC_KINASES)
+ggarrange( plotlist =  a1, nrow =4, ncol =3)
+dev.off()
+
+## supp fig 3b 
+chosen_kinases = c("PDK4", "PDGFRB", "TIE1", "TGFBR2",  # LUM a
+                   "FGFR1","IGF1R",  "WNK4" , "HSPB8",  "MPP7",  "MAPK9", # lum B 
+                   "AKT1" ,  "TTK")
+pdf(file.path( "../breast_Figures/Multiplot_SUPP_Fig3_final_kinases_4_24_2026.pdf"), height = 20, width = 16)
+a1 = my_gene_fun(chosen_kinases)
+ggarrange( plotlist =  a1, nrow =4, ncol =3)
+dev.off()
+
+genes = c( "GATA3", "AGR2", "KRT8", "KRT18", "KRT19",
+    "MUC1", "SPDEF", "TFF3", "SCUBE2",  "CA12", 
+    "KRT14", "TP63")
+pdf(file.path( "../breast_Figures/Multiplot_cluster_F_5_13_2026.pdf"), height = 20, width = 16)
+a1 = my_gene_fun(genes)
+ggarrange( plotlist =  a1, nrow =4, ncol =3)
+dev.off()    
+
+## Fig 4 :
+ERIC_KINASES2  = c("PDCD1", "CD274", "LAG3", 
+                   "CTLA4", "HAVCR2")
+
+pdf(file.path( "../breast_Figures/Multiplot_supp_Fig4b_Eric_kinases_4_17_2026.pdf"), height = 20, width = 16)
+a1 = my_gene_fun(ERIC_KINASES2)
+ggarrange( plotlist =  a1, nrow =4, ncol =3)
+dev.off()
+
+
+## supp fig 4 - T cell genes 
+chosen_kinases = c("CD38", "CD3E", "CD3G", # LUM a
+                   "CD8A",  "GZMB", "PRF1", 
+                   "FOXP3" , "CD4", "IL2RA", 
+                   "IL1B", "TNF", "CXCL9", 
+                   "CD1C", "IRF8", "CCR7") # HER2
+
+pdf(file.path( "../breast_Figures/Multiplot_SuppFig4a_final_Tcellgenes_4_17_2026.pdf"), height = 20, width = 16)
+a1 = my_gene_fun(chosen_kinases)
+ggarrange( plotlist =  a1, nrow =4, ncol =3)
+dev.off()
+
+# SUPP FIG 5 - caf marker genes. 
+markers = c(
+    "CIITA", "HLA-DRB1", "SLPI", 
+    "CA9", "SLC2A1", "PKM",
+    "CD34", "PI16", "DPT",
+    "MMP2","COL1A1", "COL3A1")
+
+a1 = my_gene_fun(markers)
+pdf(file.path( "../breast_Figures/Multiplot_suppFig5_caf_markers_8_6_2026.pdf"), height = 20, width = 16)
+ggarrange( plotlist =  a1, nrow =4, ncol =3)
+dev.off()
+
+## fig 6 
+genes = c("POU4F1", "HAND2", "SOX11", 
+         "UCHL1", "CALB2", "NXPH4", 
+         "MAP2", "MAP2", "MAP2", 
+         "NEFH", "NEFH", "NEFH", 
+         "GAN", "GAN", "GAN")
+pdf(file.path( "../breast_Figures/Multiplot_synapse_genes_fIG6__8_6_2026.pdf"), height = 20, width = 16)
+a1 = my_gene_fun(genes)
+ggarrange( plotlist =  a1, nrow =4, ncol =3)
+dev.off()
+
+```
