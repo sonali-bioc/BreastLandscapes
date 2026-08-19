@@ -1,0 +1,220 @@
+---
+title: "Make Pathway plots"
+author: "Sonali Arora"
+date: "August 19, 2026"
+output:
+  html_document:
+    toc: true
+    theme: united
+---
+In this vignette, we make all the GSVA score based pathway plots shown in the various main and supplemental figures of the paper. 
+
+```{r}
+rm(list=ls())
+library(dplyr)
+library(ggplot2)
+library(RColorBrewer)
+library(ggpubr)
+
+s1 = 2# size for points in PCA plot
+legend_pt_size =4
+plot_title_size = 25
+axis_text_size = 25
+axis_title_size=25
+legend_text_size=25
+plot_text = 10
+spacing=1
+chosen_margin = c(0.5,0.5,0.5,0.5)# margins:top,right,bottom,left
+theme_clean <- theme_bw() +
+    theme(
+        plot.title = element_text(hjust=0, vjust=0, 
+                                  lineheight=.8, face="bold", size=plot_title_size ),
+        plot.margin=unit(chosen_margin,"cm"), 
+        legend.text=element_text(size=legend_text_size),
+        legend.key.height = unit(spacing, "cm"),
+        #legend.position = "inside", legend.position.inside = c(0.8, 0.2) ,
+        legend.title=element_blank() , 
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(), 
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank())
+
+
+
+
+myPalette2 <- colorRampPalette(rev(brewer.pal(11, "Spectral")))
+pathwy_sc <- scale_colour_gradientn(colours = myPalette2(20), limits=c(-1, 1))
+
+print_mypathway = function(want, want_title){
+    
+    want = sapply(strsplit(want," R-HSA-"), function(x) x[1] )
+    want = gsub( " ", "_", want)
+    want = gsub( "-", "_", want)
+    midx = sapply(want, function(x)  grep(toupper(x), rownames(score))[1] )
+    midx = unlist(midx)
+    
+    midx = na.omit(midx)
+    
+    want_title= names(midx)
+    
+    L1 = lapply(1:length(midx), function(idx){
+        z = midx[idx]
+        PATHName = want_title[idx]
+        mat = as.data.frame(cbind( umap_data2, GSVA = unlist(score[z,])))  
+        
+        max1 = max(mat$GSVA)
+        min1= min(mat$GSVA)
+        
+        myPalette2 <- colorRampPalette(rev(brewer.pal(11, "Spectral")))
+        pathwy_sc2 <- scale_colour_gradientn(colours = myPalette2(20), limits=c(min1, max1))
+        
+        p1= ggplot(mat, aes(PaCMAP1, PaCMAP2, color=GSVA )) +
+            geom_point(size=2) + 
+            pathwy_sc2 +
+            ggtitle(paste0(PATHName)) + theme_clean + 
+            theme(legend.position = "inside", legend.position.inside = c(0.85, 0.3) )
+        p1
+    })
+}
+
+qual_col_pals = brewer.pal.info[brewer.pal.info$category == 'qual',]
+col_vector = unlist(mapply(brewer.pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
+
+setwd("~/HollandLabShared/Ramya/breast_landscape/Sonali_final_data/Objects")
+
+resdir = "~/HollandLabShared/Ramya/breast_landscape/Sonali_final_data/Figures"
+score = readRDS("pathways.rds")
+umap_data2 =read.delim("final_metadata_file_5_21_2026.txt", header=T, stringsAsFactors=F)
+
+
+## fig 3
+paths = c(  
+    "GO_COLLAGEN_ACTIVATED_TYROSINE_KINASE_RECEPTOR_SIGNALING_PATHWAY",
+    "GO_POSITIVE_REGULATION_OF_ERK1_AND_ERK2_CASCADE",
+    "REACTOME_MET_ACTIVATES_PI3K_AKT_SIGNALING", 
+    "REACTOME_ANDROGEN_BIOSYNTHESIS",
+    "KEGG_STEROID_BIOSYNTHESIS")
+wtitle_name = paths
+k1 = print_mypathway(want  = paths, want_title = gsub("REACTOME_|GO_", "", paths ))
+pdf(file.path( "../breast_Figures/Multiplot_final_Fig3_8_6_2026.pdf"), height = 20, width = 16)
+ggarrange( plotlist = k1 , nrow =4, ncol =3)
+k2 = lapply(k1, function(x) x+ ggtitle(""))
+ggarrange( plotlist = k2 , nrow =4, ncol =3)
+dev.off()
+
+
+## fig 4
+path1= c(
+    "REACTOME_G2_PHASE" ,
+    "REACTOME_UNWINDING_OF_DNA",
+    "HALLMARK_G2M_CHECKPOINT")
+path2 = c("REACTOME_PD_1_SIGNALING", 
+          "GO_REGULATION_OF_CHRONIC_INFLAMMATORY_RESPONSE", 
+          "GO_ADAPTIVE_IMMUNE_RESPONSE" )
+
+k1 = print_mypathway(want  = path1, want_title = gsub("REACTOME_|GO_", "", paths ))
+k2 = print_mypathway(want  = path2, want_title = gsub("REACTOME_|GO_", "", paths ))
+
+myPalette <- colorRampPalette(brewer.pal(5, "YlOrRd"))# for gene expression
+ylim = max(umap_data2$purity)
+ylow = min(umap_data2$purity)
+sc <- scale_colour_gradientn(colours = myPalette(5), limits=c(0.25, 0.9))     
+p1 = ggplot(umap_data2, aes(PaCMAP1, PaCMAP2, color=purity )) +
+    geom_point(size=2) + 
+    sc +
+    ggtitle( "Purity" ) + theme_clean + 
+    theme(legend.position = "inside", legend.position.inside = c(0.85, 0.3) )
+
+l1 = ggplot(umap_data2, aes(PaCMAP1, PaCMAP2, color=Science_Tcell_inflamed_GEP_PMID_30309915 )) +
+    geom_point(size=2) + 
+    pathwy_sc +
+    ggtitle( "Tcell inflammed" ) + theme_clean + 
+    theme(legend.position = "inside", legend.position.inside = c(0.85, 0.3) )
+
+l2 = ggplot(umap_data2, aes(PaCMAP1, PaCMAP2, color=Lung_5gene_tumor_purity_immune_PMID_PMC8216812 )) +
+    geom_point(size=2) + 
+    pathwy_sc +
+    ggtitle( "High Immune/Low purity" ) + theme_clean + 
+    theme(legend.position = "inside", legend.position.inside = c(0.85, 0.3) )
+
+t1  = ggplot(umap_data2, aes(PaCMAP1, PaCMAP2, color=inflam_tam )) +
+    geom_point(size=2) + 
+    pathwy_sc +
+    ggtitle( "inflam_tam" ) + theme_clean + 
+    theme(legend.position = "inside", legend.position.inside = c(0.85, 0.3) )
+
+t3  = ggplot(umap_data2, aes(PaCMAP1, PaCMAP2, color=IFN_TAM )) +
+    geom_point(size=2) + 
+    pathwy_sc +
+    ggtitle( "IFN_TAM" ) + theme_clean + 
+    theme(legend.position = "inside", legend.position.inside = c(0.85, 0.3) )
+
+t6  = ggplot(umap_data2, aes(PaCMAP1, PaCMAP2, color=folr2 )) +
+    geom_point(size=2) + 
+    pathwy_sc +
+    ggtitle( "FOLR2 tam" ) + theme_clean + 
+    theme(legend.position = "inside", legend.position.inside = c(0.85, 0.3) )
+
+ppbc_fig =ggplot(umap_data2, aes(PaCMAP1, PaCMAP2, color=PPBCVSNPBCUP )) +
+    geom_point(size=2) + 
+    pathwy_sc +
+    ggtitle( "PPBC " ) + theme_clean + 
+    theme(legend.position = "inside", legend.position.inside = c(0.85, 0.3) )
+
+pdf(file.path( "../breast_Figures/Multiplot_final_Fig4_8_6_2026.pdf"), height = 20, width = 16)
+a1 = list(k1[[1]], k1[[2]], k1[[3]], 
+          l1, l2, p1, 
+          k2[[1]], k2[[2]], k2[[3]],
+          t6,t1, t3
+)
+ggarrange( plotlist = a1 , nrow =4, ncol =3)
+k2 = lapply(a1, function(x) x+ ggtitle(""))
+ggarrange( plotlist = k2 , nrow =4, ncol =3)
+dev.off()
+
+## Supp Fig 4c           
+
+st1  = ggplot(umap_data2, aes(PaCMAP1, PaCMAP2, color=REG_TAM )) +
+    geom_point(size=2) + 
+    pathwy_sc +
+    ggtitle("REG_TAM" ) + theme_clean + 
+    theme(legend.position = "inside", legend.position.inside = c(0.85, 0.3) )
+
+
+st2  = ggplot(umap_data2, aes(PaCMAP1, PaCMAP2, color=LA_TAM )) +
+    geom_point(size=2) + 
+    pathwy_sc +
+    ggtitle( "IFN_TAM" ) + theme_clean + 
+    theme(legend.position = "inside", legend.position.inside = c(0.85, 0.3) )
+
+
+st3  = ggplot(umap_data2, aes(PaCMAP1, PaCMAP2, color=RTM_TAM )) +
+    geom_point(size=2) + 
+    pathwy_sc +
+    ggtitle("RTM_TAM" ) + theme_clean + 
+    theme(legend.position = "inside", legend.position.inside = c(0.85, 0.3) )
+
+
+st4  = ggplot(umap_data2, aes(PaCMAP1, PaCMAP2, color=rtm_tam2 )) +
+    geom_point(size=2) + 
+    pathwy_sc +
+    ggtitle( "rtm_tam2" ) + theme_clean + 
+    theme(legend.position = "inside", legend.position.inside = c(0.85, 0.3) )
+
+
+st15  = ggplot(umap_data2, aes(PaCMAP1, PaCMAP2, color=ANGIO_TAM )) +
+    geom_point(size=2) + 
+    pathwy_sc +
+    ggtitle( "FOLR2 tam" ) + theme_clean + 
+    theme(legend.position = "inside", legend.position.inside = c(0.85, 0.3) )
+
+pdf(file.path( "../breast_Figures/Multiplot_final_supp_Fig4c_tams_8_6_2026.pdf"), height = 20, width = 16)
+a1 = list(st1, st2, st3, st4, st15, t6)
+ggarrange( plotlist = a1 , nrow =4, ncol =3)
+k2 = lapply(a1, function(x) x+ ggtitle(""))
+ggarrange( plotlist = k2 , nrow =4, ncol =3)
+dev.off()
+            
+```
