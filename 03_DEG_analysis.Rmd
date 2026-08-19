@@ -1,0 +1,100 @@
+---
+title: "DEG analysis"
+author: "Sonali Arora , Ramya Suresh"
+date: "August 19, 2026"
+output:
+  html_document:
+    toc: true
+    theme: united
+---
+
+
+```{r}
+
+library(DESeq2)
+libary(edgeR)
+library(writexl)
+library(enrichR)
+
+main_dir = "~/HollandLabShared/breast_landscapes/Sonali_final_data/Objects"
+ggdf = read.delim("final_metadata_5_21_2026.txt", header=T, stringsAsFactors=F)
+gene_exp_file = readRDS("raw_matrix_batch_corrected.rds")
+ggdf[which(ggdf$cluster %in% c("D", "E")), "cluster"] = "Basal"
+
+my_enrichment_function = function(goi, title, resdir){
+  dbs <- c("GO_Molecular_Function_2023", "GO_Cellular_Component_2023",
+           "GO_Biological_Process_2023", "KEGG_2021_Human", "Reactome_2022", "BioCarta_2016")
+  enriched = enrichr( goi, dbs)
+  enriched = lapply(enriched, function(x) x[which(x$Adjusted.P.value < 0.05), ])
+  write_xlsx(x = enriched, path = file.path(resdir, paste0(title, ".xlsx")) )
+  enriched
+}
+
+dds <- DESeqDataSetFromMatrix(countData = round(gene_exp_file),
+                              colData = ggdf, design = ~cluster)
+keep <- rowSums(counts(dds)) >= 4
+table(keep)
+dds = dds[keep, ]
+dds = DESeq(dds)
+resultsNames(dds)
+
+goi = c( "B", "C", "A","F")
+
+l1 = lapply(goi, function(x) {
+    
+    lfc = 0.58
+    res1 <- results(dds, alpha = 0.05, lfcThreshold=lfc, contrast = c("cluster", x, "Basal"))
+    summary(res1)
+    resdf = as.data.frame(res1)
+    raw_counts = gene_exp_file[rownames(resdf), ]
+    cpm_counts = cpm(raw_counts)
+    colnames(raw_counts) = paste0("raw_", colnames(raw_counts))
+    colnames(cpm_counts) = paste0("cpm_", colnames(cpm_counts))
+    
+    avg_mat = cbind(rowMeans(cpm_counts[, which(fullBRCA$cluster==x)]),
+                    rowMeans(cpm_counts[, which(fullBRCA$cluster=="Basal")]))
+    colnames(avg_mat) = paste0("CPM_Avg_", c(x, "Basal"))
+    resdf = cbind(gene = rownames(resdf), resdf[, c("log2FoldChange", "pvalue", "padj")] , avg_mat)
+    
+    up_genes = resdf[ which(resdf$log2FoldChange > lfc &  resdf$padj < 0.05), ]
+    down_genes = resdf[which(resdf$log2FoldChange < -lfc &  resdf$padj < 0.05), ]
+    
+    #ordered lfc
+    up_genes = up_genes[order(up_genes$log2FoldChange, decreasing=T), ]
+    down_genes = down_genes[order(down_genes$log2FoldChange), ]
+    
+    #matching with kinases and syngo
+    up_kinases = up_genes[which(up_genes$gene %in% kinases$GENE),]
+    down_kinases = down_genes[which(down_genes$gene %in% kinases$GENE),]
+    up_syngo = up_genes[which(up_genes$gene %in% syngo),]
+    down_syngo = down_genes[which(down_genes$gene %in% syngo),]    
+    
+    lst = list(all_DE_results = resdf,
+               deseq2_up_genes = up_genes,
+               deseq2_down_genes = down_genes,
+               up_genes_kinase = up_kinases,
+               down_genes_kinase = down_kinases,
+               up_genes_syngo = up_syngo,
+               down_genes_syngo = down_syngo)
+    write_xlsx(x = lst, path = file.path(resdir, paste0("DEG_", x, "_vs_Basal.xlsx")) )
+    
+    if (length(up_genes$gene) > 350 ) {
+        enrichr_up_genes = up_genes$gene[1:350]
+    }else{
+        enrichr_up_genes = up_genes$gene
+    }
+    
+    if (length(down_genes$gene) > 350){
+        enrichr_down_genes = down_genes$gene[1:350]
+    }else{
+        enrichr_down_genes = down_genes$gene
+    }
+    
+    a1 = my_enrichment_function( enrichr_up_genes, paste0("Enrichr_up_", x, "_vs_Basal"),
+                                 resdir)
+    a2 = my_enrichment_function( enrichr_down_genes, paste0("Enrichr_down_", x, "_vs_Basal"),
+                                resdir)
+    
+})
+
+```
