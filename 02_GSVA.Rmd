@@ -1,0 +1,106 @@
+---
+title: "GSVA scores"
+author: "Sonali Arora"
+date: "August 19, 2026"
+output:
+  html_document:
+    toc: true
+    theme: united
+---
+
+In this vignette, we use Gene set variation analysis ( GSVA) to calculate GSVA scores for different genesets used in the paper. 
+
+```{r}
+
+library(GSVA)
+library(org.Hs.eg.db)
+library(genefu)
+data(pam50.robust)
+library(clusterProfiler) #for read.gmt function
+
+main_dir = "~/HollandLabShared/breast_landscapes/Sonali_final_data/Objects"
+umap_data2 = read.delim("final_metadata_5_21_2026.txt", header=T, stringsAsFactors=F)
+gene_exp_file = readRDS("log2_tpm_counts.rds")
+
+# 1. pathways for reactome, KEGG, biocarta , GO , Hallmark
+extdata = "~/HollandLabShared/DATASETS_CLEAN_from_Sonali/msigdb"
+
+kegg_db <- read.gmt(file.path(extdata, "c2.cp.kegg.v7.2.symbols.gmt"))
+biocarta_db <- read.gmt(file.path(extdata, "c2.cp.biocarta.v7.2.symbols.gmt"))
+reactome_db <- read.gmt(file.path(extdata, "c2.cp.reactome.v7.2.symbols.gmt"))
+go_bp = read.gmt(file.path(extdata, "c5.go.bp.v7.2.symbols.gmt"))
+tft_db = read.gmt(file.path(extdata, "c3.tft.v2023.1.Hs.symbols.gmt"))
+hallmark = read.gmt(file.path(extdata, "h.all.v7.2.symbols.gmt"))
+
+kegg_lst= split(kegg_db, kegg_db[,1])
+kegg_lst = lapply(kegg_lst, function(x) x[,2])
+
+biocarta_lst= split(biocarta_db, biocarta_db[,1])
+biocarta_lst = lapply(biocarta_lst, function(x) x[,2])
+
+reactome_lst= split(reactome_db, reactome_db[,1])
+reactome_lst = lapply(reactome_lst, function(x) x[,2])
+
+go_bp= split(go_bp, go_bp[,1])
+go_bp = lapply(go_bp, function(x) x[,2])
+
+tft_db= split(tft_db, tft_db[,1])
+tft_db = lapply(tft_db, function(x) x[,2])
+
+hallmark= split(hallmark, hallmark[,1])
+hallmark = lapply(hallmark, function(x) x[,2])
+
+counts = gene_exp_file
+
+gsvapar <- gsvaParam(counts, kegg_lst, maxDiff=TRUE)
+kegg_res <- gsva(gsvapar) 
+
+gsvapar <- gsvaParam(counts, biocarta_lst, maxDiff=TRUE)
+biocarta_res <- gsva(gsvapar)
+
+gsvapar <- gsvaParam(counts, reactome_lst, maxDiff=TRUE)
+reactome_res <- gsva(gsvapar)
+
+gsvapar <- gsvaParam(counts, go_bp, maxDiff=TRUE)
+gobp_res <- gsva(gsvapar)
+
+gsvapar <- gsvaParam(counts, tft_db, maxDiff=TRUE)
+tft_res <- gsva(gsvapar)
+
+gsvapar <- gsvaParam(counts, hallmark, maxDiff=TRUE)
+hallmark_res <- gsva(gsvapar)
+
+score = rbind(tft_res, gobp_res, hallmark_res, reactome_res, biocarta_res, kegg_res)
+saveRDS(score , file = "pathways.rds")
+
+
+# 2. PAM 50 subtyping 
+# Note : need the entrz id for the genes
+entrez = mapIds(org.Hs.eg.db, keys = rownames(gene_exp_file),
+                column = "ENTREZID", keytype = "SYMBOL", multiVals = "first" )
+entrez <- data.frame( gene_symbol = names(entrez), entrez_id = as.character(entrez),
+    stringsAsFactors = FALSE)
+colnames(entrez) = c("probe", "EntrezGene.ID")
+rownames(entrez) = entrez$probe
+
+pam50_result <- molecular.subtyping(sbt.model = "pam50", data= t(gene_exp_file),
+                                    annot=as.matrix(entrez), do.mapping=TRUE)
+saveRDS(pam50_result, "pam50_result_all_samples.rds")
+
+
+# 3. read in gene lists ( CAF, TAM, peripheral neuron, immune gene lists, resistance scores) 
+goi <- as.data.frame(read_xlsx("Final_supplemental_Tables.xlsx", sheet = 3))
+gset <- apply(goi, 2, function(x){
+  rm = which(x=="")
+  if(length(rm)!=0){
+    x[-rm]
+  }
+})
+
+gsvapar <- gsvaParam(gene_exp_file,gset, maxDiff=TRUE)
+my_res <- gsva(gsvapar)
+my_res = t(my_res)
+
+saveRDS(res, "GSVA_scores.rds")
+```
+
